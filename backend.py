@@ -1,8 +1,8 @@
-# backend.py (Using Document AI Extraction, Translation, and Merging)
+# backend.py (Using Document AI Extraction, Translation, and Merging - Fix st NameError)
 
 import io
 import google.generativeai as genai
-from docx import Document
+from docx import Document # For reading/writing .docx
 from docxcompose.composer import Composer
 from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -16,6 +16,10 @@ import json # Needed again for credentials
 from google.cloud import documentai
 # ---
 
+# --- FIX: Import Streamlit ---
+import streamlit as st
+# ---
+
 # --- Configure Logging ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(module)s - %(message)s')
 
@@ -25,6 +29,7 @@ CREDENTIALS_FILENAME = "google_credentials.json"
 _credentials_configured = False # Flag to track if setup was attempted
 
 # Check for secret first (preferred method for Streamlit Cloud)
+# This block now correctly uses 'st' after the import was added
 if "GOOGLE_CREDENTIALS_JSON" in st.secrets:
     logging.info("Found GOOGLE_CREDENTIALS_JSON in Streamlit Secrets. Setting up credentials file.")
     try:
@@ -108,45 +113,24 @@ else:
 # --- END: Runtime Credentials Setup ---
 
 
-# --- NEW: Function to extract text using Document AI ---
+# --- Function to extract text using Document AI (Unchanged) ---
 def extract_text_with_docai(file_obj, project_id: str, location: str, processor_id: str):
     """
     Extracts text from a PDF/image file object using Google Cloud Document AI.
-
-    Args:
-        file_obj: A file-like object (e.g., from st.file_uploader).
-        project_id (str): Google Cloud project ID.
-        location (str): Document AI processor location (e.g., 'us', 'eu').
-        processor_id (str): Document AI processor ID.
-
-    Returns:
-        str: The extracted text, or an error string starting with "Error:".
     """
     global _credentials_configured
     if not _credentials_configured:
         return "Error: Document AI authentication failed (Credentials not configured)."
-
     if not all([project_id, location, processor_id]):
         return "Error: Missing Document AI configuration (Project ID, Location, or Processor ID)."
-
     try:
-        # You must set the `api_endpoint` if you use a location other than 'us'.
         opts = {"api_endpoint": f"{location}-documentai.googleapis.com"}
         client = documentai.DocumentProcessorServiceClient(client_options=opts)
-
-        # The full resource name of the processor version, e.g.:
-        # projects/project_id/locations/location/processors/processor_id
-        # Or projects/project_id/locations/location/processors/processor_id/processorVersions/processor_version_id
-        name = client.processor_path(project_id, location, processor_id) # Use this if using default version
-
-        # Read the file content
+        name = client.processor_path(project_id, location, processor_id)
         file_obj.seek(0)
         image_content = file_obj.read()
-
-        # Get MIME type from the uploaded file object
         mime_type = file_obj.type
         if not mime_type:
-            # Basic fallback based on extension if type is missing (less reliable)
             ext = os.path.splitext(file_obj.name)[1].lower()
             if ext == ".pdf": mime_type = "application/pdf"
             elif ext == ".png": mime_type = "image/png"
@@ -155,33 +139,19 @@ def extract_text_with_docai(file_obj, project_id: str, location: str, processor_
             else: return f"Error: Cannot determine MIME type for file '{file_obj.name}'."
             logging.warning(f"Guessed MIME type '{mime_type}' from extension for {file_obj.name}")
 
-        # Load Binary Data into Document AI RawDocument structure
         raw_document = documentai.RawDocument(content=image_content, mime_type=mime_type)
-
-        # Configure the process request
         request = documentai.ProcessRequest(name=name, raw_document=raw_document)
-
-        # Use the Document AI client to process the sample document
         logging.info(f"Sending request to Document AI processor: {name} for file: {file_obj.name} ({mime_type})")
         result = client.process_document(request=request)
-
-        # Extract text from the processed document
         document = result.document
         logging.info(f"Received response from Document AI. Extracted text length: {len(document.text)}")
-
-        # NOTE: This returns ALL extracted text. Footnotes, headers etc. are included.
-        # Filtering them requires post-processing 'document' object's layout info,
-        # or relying on the subsequent Gemini step's prompt instructions.
         return document.text
-
     except Exception as e:
         logging.error(f"Error calling Document AI for file '{file_obj.name}': {e}", exc_info=True)
-        # Improve error reporting if possible (e.g., check for common API errors)
         return f"Error: Failed to process document with Document AI. Details: {e}"
 
 
-# --- Gemini Processing (Unchanged from backend_py_docx_merge) ---
-# Takes text (now from DocAI), translates using rules from app.py
+# --- Gemini Processing (Unchanged) ---
 def process_text_with_gemini(api_key: str, raw_text: str, rules_prompt: str, model_name: str):
     """
     Sends text (extracted via Document AI) to Gemini for translation based on rules.
@@ -191,7 +161,6 @@ def process_text_with_gemini(api_key: str, raw_text: str, rules_prompt: str, mod
         logging.warning("Skipping Gemini call: No text extracted from Document AI.")
         return ""
     if not model_name: return "Error: Gemini model name not specified."
-
     try:
         genai.configure(api_key=api_key)
         logging.info(f"Initializing Gemini model: {model_name}")
@@ -199,9 +168,7 @@ def process_text_with_gemini(api_key: str, raw_text: str, rules_prompt: str, mod
         full_prompt = f"**Instructions:**\n{rules_prompt}\n\n**Text to Process:**\n---\n{raw_text}\n---\n\n**Output:**\nReturn ONLY the processed text (Arabic translation) according to the instructions."
         logging.info(f"Sending request to Gemini model: {model_name} for translation. Text length: {len(raw_text)}")
         response = model.generate_content(full_prompt)
-
         if not response.parts:
-            # Handle blocked content or empty response (same logic as before)
             block_reason = getattr(getattr(response, 'prompt_feedback', None), 'block_reason', None)
             if block_reason:
                 logging.error(f"Gemini request ({model_name}) blocked. Reason: {block_reason}.")
@@ -217,8 +184,7 @@ def process_text_with_gemini(api_key: str, raw_text: str, rules_prompt: str, mod
         return f"Error: Failed to process text with Gemini ({model_name}). Details: {e}"
 
 
-# --- Create SINGLE Word Document (Unchanged from backend_py_docx_merge) ---
-# Takes Arabic text, creates formatted .docx stream
+# --- Create SINGLE Word Document (Unchanged) ---
 def create_arabic_word_doc_from_text(arabic_text: str, filename: str):
     """
     Creates a single Word document (.docx) in memory containing the translated Arabic text.
@@ -226,17 +192,14 @@ def create_arabic_word_doc_from_text(arabic_text: str, filename: str):
     try:
         document = Document()
         style = document.styles['Normal']
-        font = style.font
-        font.name = 'Arial'; font.rtl = True
+        font = style.font; font.name = 'Arial'; font.rtl = True
         style_element = style.element
         rpr = style_element.xpath('.//w:rPr')[0] if style_element.xpath('.//w:rPr') else OxmlElement('w:rPr')
         if not style_element.xpath('.//w:rPr'): style_element.append(rpr)
         font_name_el = rpr.find(qn('w:rFonts'))
         if font_name_el is None: font_name_el = OxmlElement('w:rFonts'); rpr.append(font_name_el)
         font_name_el.set(qn('w:cs'), 'Arial')
-        p_fmt = style.paragraph_format
-        p_fmt.alignment = WD_ALIGN_PARAGRAPH.RIGHT; p_fmt.right_to_left = True
-
+        p_fmt = style.paragraph_format; p_fmt.alignment = WD_ALIGN_PARAGRAPH.RIGHT; p_fmt.right_to_left = True
         if arabic_text and arabic_text.strip():
             lines = arabic_text.strip().split('\n')
             for line in lines:
@@ -248,10 +211,7 @@ def create_arabic_word_doc_from_text(arabic_text: str, filename: str):
             p = document.add_paragraph(f"[No translation generated for '{filename}']")
             p.italic = True; p.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.RIGHT; p.paragraph_format.right_to_left = True
             for run in p.runs: run.font.name = 'Arial'; run.font.rtl = True; run.font.complex_script = True
-
-        doc_stream = io.BytesIO()
-        document.save(doc_stream)
-        doc_stream.seek(0)
+        doc_stream = io.BytesIO(); document.save(doc_stream); doc_stream.seek(0)
         logging.info(f"Successfully created intermediate Word doc stream for '{filename}'.")
         return doc_stream
     except Exception as e:
@@ -259,36 +219,26 @@ def create_arabic_word_doc_from_text(arabic_text: str, filename: str):
         return None
 
 
-# --- Merge Word Documents (Unchanged from backend_py_docx_merge) ---
-# Uses docxcompose to merge streams
+# --- Merge Word Documents (Unchanged) ---
 def merge_word_documents(doc_streams_data: list[tuple[str, io.BytesIO]]):
     """
     Merges multiple Word documents (provided as BytesIO streams) into one single document.
     """
     if not doc_streams_data: return None
     try:
-        first_filename, first_stream = doc_streams_data[0]
-        first_stream.seek(0)
-        master_doc = Document(first_stream)
-        composer = Composer(master_doc)
+        first_filename, first_stream = doc_streams_data[0]; first_stream.seek(0)
+        master_doc = Document(first_stream); composer = Composer(master_doc)
         logging.info(f"Initialized merger with base document from '{first_filename}'.")
         if len(doc_streams_data) > 1:
             for i in range(1, len(doc_streams_data)):
-                filename, stream = doc_streams_data[i]
-                stream.seek(0)
+                filename, stream = doc_streams_data[i]; stream.seek(0)
                 logging.info(f"Appending content from '{filename}'...")
-                sub_doc = Document(stream)
-                composer.master.add_page_break() # Add page break between merged docs
+                sub_doc = Document(stream); composer.master.add_page_break()
                 composer.append(sub_doc)
                 logging.info(f"Successfully appended content from '{filename}'.")
-        merged_stream = io.BytesIO()
-        composer.save(merged_stream)
-        merged_stream.seek(0)
+        merged_stream = io.BytesIO(); composer.save(merged_stream); merged_stream.seek(0)
         logging.info(f"Successfully merged {len(doc_streams_data)} documents.")
         return merged_stream
     except Exception as e:
         logging.error(f"Error merging Word documents using docxcompose: {e}", exc_info=True)
         return None
-
-# --- REMOVED: extract_text_from_docx function ---
-# --- REMOVED: append_text_to_document function ---
