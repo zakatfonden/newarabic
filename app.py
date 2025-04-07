@@ -25,7 +25,7 @@ default_state = {
     'ordered_files': [], # List for PDF/Image UploadedFile objects
     # --- DocAI config ---
     'docai_project_id': '',
-    'docai_location': '',
+    'docai_location': '', # Default location will be set in the widget if not in secrets
     'docai_processor_id': '',
     # --- Gemini API Key (kept in session state implicitly via widget) ---
 }
@@ -148,7 +148,8 @@ st.session_state.docai_project_id = st.sidebar.text_input(
 # Input for Processor Location (Region)
 st.session_state.docai_location = st.sidebar.text_input(
     "Processor Location",
-    value=st.session_state.docai_location or st.secrets.get("DOCAI_LOCATION", "us"), # Default to 'us'
+    # Set default value to "eu" if not found in session state or secrets
+    value=st.session_state.docai_location or st.secrets.get("DOCAI_LOCATION", "eu"), # <- CHANGED DEFAULT HERE
     help="The region of your Document AI processor (e.g., 'us', 'eu')."
 )
 # Input for Processor ID
@@ -171,14 +172,15 @@ st.sidebar.markdown("---") # Visual separator
 # --- Gemini Configuration Section ---
 st.sidebar.subheader("Gemini Settings")
 # Input for Gemini API Key (masked as password)
-api_key_from_secrets = st.secrets.get("GEMINI_API_KEY", "") # Try loading from Streamlit secrets
+# Check for key in secrets first, then allow manual input
+api_key_from_secrets = st.secrets.get("GEMINI_API_KEY", "")
 api_key = st.sidebar.text_input(
     "Enter your Google Gemini API Key", type="password",
     help="Required for text processing via Gemini. Get your key from Google AI Studio.",
     value=api_key_from_secrets or "", # Use secret if available, otherwise empty
     key="gemini_api_key_input" # Assign a unique key to the widget
 )
-# Check if Gemini API key is available (either from secrets or manual input)
+# Check if Gemini API key is available and provide feedback
 gemini_configured = False
 if api_key_from_secrets and api_key == api_key_from_secrets:
     st.sidebar.success("Gemini Key loaded from Secrets.", icon="🔑")
@@ -209,7 +211,7 @@ st.sidebar.caption(f"Selected model ID: `{selected_model_id}`")
 # Text area for defining Gemini processing rules
 st.sidebar.markdown("---")
 st.sidebar.header("📜 Gemini Processing Rules")
-# --- UPDATED DEFAULT RULES ---
+# --- Default rules focused on cleaning Arabic/Urdu text ---
 default_rules = """Structure the text into paragraphs.
 Delete headers (typically signifies the name of a chapter).
 Delete footnotes.
@@ -219,7 +221,7 @@ Remember all the text below the bottom line.
 Compare with the extracted text.
 Now delete all text that can be identified as above the top line.
 Then delete all the text that can be identified as below the bottom line. Everything below the bottom line is footnotes, so it must be deleted."""
-# --- END UPDATED DEFAULT RULES ---
+# --- End Default Rules ---
 rules_prompt = st.sidebar.text_area(
     "Enter the processing instructions for Gemini:",
     value=default_rules, height=250, # Adjust height as needed
