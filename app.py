@@ -67,9 +67,10 @@ def handle_uploads():
     """
     Callback function triggered when files are uploaded via st.file_uploader.
     Adds new, valid files to the session state's ordered list, avoiding duplicates.
-    Clears the uploader widget state afterwards.
+    *** Does NOT attempt to clear the uploader widget state directly. ***
     """
     uploader_key = "docai_uploader" # Key for the file uploader widget
+    # Check if the uploader key exists in session state and has files
     if uploader_key in st.session_state and st.session_state[uploader_key]:
         current_filenames = {f.name for f in st.session_state.ordered_files}
         new_files_added_count = 0
@@ -78,6 +79,7 @@ def handle_uploads():
         allowed_types = ["application/pdf", "image/jpeg", "image/png", "image/tiff", "image/gif", "image/bmp", "image/webp"]
         allowed_ext = [".pdf", ".jpg", ".jpeg", ".png", ".tiff", ".tif", ".gif", ".bmp", ".webp"]
 
+        # Iterate through the files currently held by the uploader widget's state
         for uploaded_file in st.session_state[uploader_key]:
             # Check both MIME type and extension for robustness
             file_allowed = False
@@ -113,17 +115,17 @@ def handle_uploads():
         if skipped_count > 0:
              st.warning(f"Skipped {skipped_count} file(s) due to unsupported type. Allowed types: PDF, JPG, PNG, TIFF, GIF, BMP, WEBP.", icon="⚠️")
 
-        # Clear the file uploader widget state in session_state
-        # This prevents the same files from being re-processed automatically if the script reruns
-        st.session_state[uploader_key] = []
+        # --- REMOVED THIS LINE to fix the error ---
+        # st.session_state[uploader_key] = []
+        # The file uploader widget will manage clearing its own state after the callback.
 
 def clear_all_files_callback():
     """Removes all files from the list and resets state."""
-    st.session_state.ordered_files = []
+    st.session_state.ordered_files = [] # Clear our managed list of files
     uploader_key = "docai_uploader"
-    # Also clear the uploader widget's internal state if possible
-    if uploader_key in st.session_state:
-        st.session_state[uploader_key] = []
+    # --- REMOVED THIS LINE to fix the error ---
+    # if uploader_key in st.session_state:
+    #     st.session_state[uploader_key] = [] # Don't try to clear the widget directly
     reset_processing_state()
     st.toast("Removed all files from the list.")
 
@@ -613,3 +615,4 @@ if not st.session_state.ordered_files and not st.session_state.processing_starte
 # --- Footer ---
 st.markdown("---")
 st.markdown("Developed with Streamlit, Google Document AI, and Google Gemini.")
+
