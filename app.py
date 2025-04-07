@@ -207,7 +207,7 @@ st.sidebar.caption(f"Selected model ID: `{selected_model_id}`")
 # Text area for defining Gemini processing rules
 st.sidebar.markdown("---")
 st.sidebar.header("📜 Gemini Processing Rules")
-# --- Default rules focused on cleaning Arabic/Urdu text ---
+# --- UPDATED DEFAULT RULES ---
 default_rules = """Structure the text into paragraphs.
 Delete headers (typically signifies the name of a chapter).
 Delete footnotes.
@@ -216,9 +216,8 @@ The top line is at the top of the page. Within the first 5cm of the page. Rememb
 Remember all the text below the bottom line.
 Compare with the extracted text.
 Now delete all text that can be identified as above the top line.
-Then delete all the text that can be identified as below the bottom line. Everything below the bottom line is footnotes, so it must be deleted.
-Return ONLY the processed text, without any introductory phrases or explanations."""
-# --- End Default Rules ---
+Then delete all the text that can be identified as below the bottom line. Everything below the bottom line is footnotes, so it must be deleted."""
+# --- END UPDATED DEFAULT RULES ---
 rules_prompt = st.sidebar.text_area(
     "Enter the processing instructions for Gemini:",
     value=default_rules, height=250, # Adjust height as needed
